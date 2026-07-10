@@ -914,43 +914,70 @@
       draw();
     }
 
+    function tint(hex,amt){ // 往白色混，amt 0~1
+      const n=parseInt(hex.slice(1),16);
+      let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+      r=Math.round(r+(255-r)*amt); g=Math.round(g+(255-g)*amt); b=Math.round(b+(255-b)*amt);
+      return "rgb("+r+","+g+","+b+")";
+    }
+    function shade(hex,amt){ // 往黑色混
+      const n=parseInt(hex.slice(1),16);
+      let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+      r=Math.round(r*(1-amt)); g=Math.round(g*(1-amt)); b=Math.round(b*(1-amt));
+      return "rgb("+r+","+g+","+b+")";
+    }
+
     function drawArrow(x,y,a,highlight){
-      const pad=Math.max(2,C*0.09);
-      ctx.fillStyle=a.color;
-      roundRectPath(ctx,x*C+pad,y*C+pad,C-pad*2,C-pad*2,Math.floor(C*0.2)); ctx.fill();
-      ctx.fillStyle="rgba(255,255,255,.22)";
-      roundRectPath(ctx,x*C+pad+2,y*C+pad+2,C-pad*2-4,(C-pad*2)*0.32,Math.floor(C*0.16)); ctx.fill();
-      const cx=x*C+C/2, cy=y*C+C/2, s=C*0.24;
+      const pad=Math.max(2,C*0.10);
+      const rx=x*C+pad, ry=y*C+pad, rw=C-pad*2, rh=C-pad*2, r=Math.floor(C*0.26);
+      // 立體磚（漸層 + 陰影）
+      ctx.save();
+      ctx.shadowColor="rgba(0,0,0,.4)"; ctx.shadowBlur=C*0.06; ctx.shadowOffsetY=C*0.05;
+      const g=ctx.createLinearGradient(0,ry,0,ry+rh);
+      g.addColorStop(0, tint(a.color,0.22)); g.addColorStop(1, shade(a.color,0.12));
+      ctx.fillStyle=g; roundRectPath(ctx,rx,ry,rw,rh,r); ctx.fill();
+      ctx.restore();
+      // 上緣高光
+      ctx.fillStyle="rgba(255,255,255,.30)";
+      roundRectPath(ctx,rx+rw*0.12,ry+rh*0.10,rw*0.76,rh*0.20,r*0.55); ctx.fill();
+      // 白色胖箭頭（帶淡淡陰影）
+      const cx=x*C+C/2, cy=y*C+C/2, s=C*0.27;
       const d=DIRS[a.dir], px=-d[1], py=d[0];
-      // 箭桿
-      ctx.strokeStyle="#fff"; ctx.lineWidth=C*0.11; ctx.lineCap="round";
-      ctx.beginPath(); ctx.moveTo(cx-d[0]*s*0.9, cy-d[1]*s*0.9); ctx.lineTo(cx+d[0]*s*0.15, cy+d[1]*s*0.15); ctx.stroke();
-      // 箭頭三角
+      ctx.save();
+      ctx.shadowColor="rgba(0,0,0,.18)"; ctx.shadowBlur=C*0.03; ctx.shadowOffsetY=C*0.02;
+      ctx.strokeStyle="#fff"; ctx.lineWidth=C*0.16; ctx.lineCap="round"; ctx.lineJoin="round";
+      ctx.beginPath(); ctx.moveTo(cx-d[0]*s*0.85, cy-d[1]*s*0.85); ctx.lineTo(cx+d[0]*s*0.05, cy+d[1]*s*0.05); ctx.stroke();
       ctx.fillStyle="#fff"; ctx.beginPath();
       ctx.moveTo(cx+d[0]*s, cy+d[1]*s);
-      ctx.lineTo(cx-d[0]*s*0.35+px*s*0.75, cy-d[1]*s*0.35+py*s*0.75);
-      ctx.lineTo(cx-d[0]*s*0.35-px*s*0.75, cy-d[1]*s*0.35-py*s*0.75);
+      ctx.lineTo(cx-d[0]*s*0.30+px*s*0.85, cy-d[1]*s*0.30+py*s*0.85);
+      ctx.lineTo(cx-d[0]*s*0.30-px*s*0.85, cy-d[1]*s*0.30-py*s*0.85);
       ctx.closePath(); ctx.fill();
+      ctx.restore();
       if(highlight){
-        ctx.strokeStyle="#fff"; ctx.lineWidth=Math.max(3,C*0.07);
-        roundRectPath(ctx,x*C+pad,y*C+pad,C-pad*2,C-pad*2,Math.floor(C*0.2)); ctx.stroke();
+        ctx.strokeStyle="#fff44d"; ctx.lineWidth=Math.max(3,C*0.08);
+        roundRectPath(ctx,rx,ry,rw,rh,r); ctx.stroke();
       }
     }
 
     function draw(){
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      ctx.strokeStyle="rgba(255,255,255,.05)"; ctx.lineWidth=1;
-      for(let x=1;x<COLS;x++){ctx.beginPath();ctx.moveTo(x*C,0);ctx.lineTo(x*C,canvas.height);ctx.stroke();}
-      for(let y=1;y<ROWS;y++){ctx.beginPath();ctx.moveTo(0,y*C);ctx.lineTo(canvas.width,y*C);ctx.stroke();}
+      // 深藍棋盤底
+      ctx.fillStyle="#232d4d"; roundRectPath(ctx,0,0,canvas.width,canvas.height,18); ctx.fill();
+      // 每格凹槽
+      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+        const pad=Math.max(2,C*0.10);
+        ctx.fillStyle="#1a2238";
+        roundRectPath(ctx,x*C+pad,y*C+pad,C-pad*2,C-pad*2,Math.floor(C*0.26)); ctx.fill();
+      }
       const showHint = hintUntil && Date.now()<hintUntil;
       for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
         const a=G[y][x]; if(!a) continue;
         drawArrow(x,y,a, showHint && canExit(x,y));
       }
-      if(flash && Date.now()-flash.t<260){
-        const pad=Math.max(2,C*0.09);
-        ctx.strokeStyle="#f2694a"; ctx.lineWidth=Math.max(3,C*0.08);
-        roundRectPath(ctx,flash.x*C+pad,flash.y*C+pad,C-pad*2,C-pad*2,Math.floor(C*0.2)); ctx.stroke();
+      if(flash && Date.now()-flash.t<280){
+        const pad=Math.max(2,C*0.10);
+        ctx.strokeStyle="#f2694a"; ctx.lineWidth=Math.max(3,C*0.09);
+        roundRectPath(ctx,flash.x*C+pad,flash.y*C+pad,C-pad*2,C-pad*2,Math.floor(C*0.26)); ctx.stroke();
       }
     }
 
