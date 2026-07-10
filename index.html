@@ -219,7 +219,7 @@
         <button class="startbtn" id="mStart">開始玩</button>
       </div>
     </div>
-    <div class="puzzhint">點一個水果，再點另一個一樣的</div>
+    <div class="puzzhint" id="mHint">點一個水果，再點另一個一樣的</div>
     <div class="minirow" style="width:100%;padding:0 2px 4px;">
       <button class="minibtn" id="mShuffle">🔀 洗牌</button>
       <button class="minibtn" id="mRestart">↺ 重新開始</button>
@@ -243,7 +243,7 @@
         <button class="startbtn" id="dStart">開始玩</button>
       </div>
     </div>
-    <div class="puzzhint">點一條蛇讓它滑出去；滑不走代表前面被別條擋住了</div>
+    <div class="puzzhint" id="dHint">點一條蛇讓它滑出去；滑不走代表前面被別條擋住了</div>
     <div class="minirow" style="width:100%;padding:0 2px 4px;">
       <button class="minibtn" id="dClear">💡 提示</button>
       <button class="minibtn" id="dNew">↺ 換一題</button>
@@ -262,7 +262,9 @@
 
   const Store = {
     best(m){ return parseInt(localStorage.getItem("best_"+m) || "0", 10) || 0; },
-    save(m,v){ if (v > this.best(m)) { localStorage.setItem("best_"+m, String(v)); return true; } return false; }
+    save(m,v){ if (v > this.best(m)) { localStorage.setItem("best_"+m, String(v)); return true; } return false; },
+    level(m){ return parseInt(localStorage.getItem("lvl_"+m) || "1", 10) || 1; },
+    setLevel(m,v){ localStorage.setItem("lvl_"+m, String(v)); }
   };
 
   function refreshHomeBest(){
@@ -326,6 +328,9 @@
   function praise(el,n){
     let txt=PRAISES[Math.floor(Math.random()*PRAISES.length)];
     if(n>=3) txt="哇！好強！🎉";
+    flashText(el,txt);
+  }
+  function flashText(el,txt){
     el.textContent=txt;
     el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
   }
@@ -704,10 +709,13 @@
 
   // ================= 水果配對（連連看） =================
   const Match = (function(){
-    const COLS=8, ROWS=8;
-    const FRUITS=["🍎","🍊","🍋","🍇","🍉","🍓","🍑","🍌"];
+    let COLS=8, ROWS=8;
+    // 一大堆水果/食物，每關抽不同幾種，看起來都不一樣
+    const POOL=["🍎","🍊","🍋","🍇","🍉","🍓","🍑","🍌","🥝","🍈","🫐","🍒","🍍","🥭","🥥","🍅","🍆","🥕","🌽","🥑","🍄","🥦","🍠","🍐"];
+    const SIZES=[[6,6],[8,6],[8,8],[6,8]]; // 每關輪流不同盤面
+    let FRUITS=POOL.slice(0,8);
     const canvas=$("mCanvas"), ctx=canvas.getContext("2d");
-    let C, G, score, sel, running, over;
+    let C, G, score, sel, running, over, level;
 
     function emptyAt(x,y){
       // 外圍留一圈空白邊界，路徑可繞到外面
@@ -829,9 +837,10 @@
         G[a.y][a.x]=null; G[b.y][b.x]=null; sel=null;
         combo++; score+=100*combo; stat(); beep(combo>=3?3:1);
         if(combo>=3) praise($("mPraise"),3);
-        if(positions().length===0){ // 清空 → 換新盤
+        if(positions().length===0){ // 清空 → 下一關
           praise($("mPraise"),3); combo=0;
-          setTimeout(()=>{ newBoard(); draw(); },350);
+          level++; Store.setLevel("match",level);
+          setTimeout(()=>{ applyLevel(); newBoard(); resize(); flashText($("mPraise"),"第 "+level+" 關"); },380);
         } else if(!anyMove()){
           let g=0; while(!anyMove()&&g++<20) reshuffle();
         }
@@ -848,8 +857,15 @@
       tapCell(Math.floor(p.x/C),Math.floor(p.y/C));
     });
 
+    function applyLevel(){
+      const sz=SIZES[(level-1)%SIZES.length]; COLS=sz[0]; ROWS=sz[1];
+      const nTypes=Math.min(POOL.length, 6+((level-1)%5)); // 每關 6~10 種水果
+      const pool=POOL.slice(); shuffle(pool); FRUITS=pool.slice(0,nTypes);
+      $("mHint").textContent="第 "+level+" 關 ‧ 點兩個一樣的水果";
+    }
     function start(){
       score=0; over=false; running=true; sel=null; combo=0;
+      level=Store.level("match"); applyLevel();
       newBoard(); stat(); hideOverlay(); resize(); ensureAudio();
     }
 
@@ -860,9 +876,10 @@
 
     return {
       onShow(){ $("mBest").textContent=Store.best("match");
+        level=Store.level("match"); applyLevel();
         G=Array.from({length:ROWS},()=>Array(COLS).fill(null)); score=0; sel=null; combo=0;
         running=false; over=false; resize();
-        overlay("水果配對","點兩個一樣的水果<br>連得起來就消除","消完會自動換一盤，慢慢玩 💛","開始玩"); },
+        overlay("水果配對","點兩個一樣的水果<br>連得起來就消除","第 "+level+" 關開始，消完換下一關 💛","開始玩"); },
       resize,
       saveBest(){ Store.save("match",score); }
     };
@@ -870,11 +887,18 @@
 
   // ================= 箭頭滑滑（Flow 霓虹蛇） =================
   const Draw = (function(){
-    const COLS=7, ROWS=7;
+    let COLS=7, ROWS=7;
     const canvas=$("dCanvas"), ctx=canvas.getContext("2d");
     const DIRS={U:[0,-1],D:[0,1],L:[-1,0],R:[1,0]};
-    const NEON=["#ff3fa4","#ffd23d","#ff8a3d","#3ddc84","#ff5470","#c661ff","#35c9e0"];
-    let C, score, running, over, snakes, occ, flash, hintUntil;
+    // 每關換一組配色 + 背景，看起來都不一樣
+    const THEMES=[
+      { bg:"#15151f", cols:["#ff3fa4","#ffd23d","#ff8a3d","#3ddc84","#ff5470","#c661ff"] },
+      { bg:"#0e1826", cols:["#35c9e0","#5b8def","#c661ff","#7fe3a0","#ffd23d","#ff5470"] },
+      { bg:"#1a1020", cols:["#ff5470","#ff8a3d","#ffd23d","#ff3fa4","#c661ff","#3ddc84"] },
+      { bg:"#0f1a18", cols:["#3ddc84","#35c9e0","#a0e857","#ffd23d","#ff8a3d","#5b8def"] },
+      { bg:"#191320", cols:["#c661ff","#ff3fa4","#5b8def","#35c9e0","#ffd23d","#ff8a3d"] }
+    ];
+    let C, score, running, over, snakes, occ, flash, hintUntil, level, PALETTE, BG;
 
     const key=(x,y)=>y*COLS+x;
     const inb=(x,y)=>x>=0&&x<COLS&&y>=0&&y<ROWS;
@@ -912,7 +936,7 @@
         }
         const idx=list.length;
         for(const [x,y] of body) o[y][x]=idx;
-        list.push({ cells:body, color:NEON[Math.floor(Math.random()*NEON.length)], dir, gone:false });
+        list.push({ cells:body, color:PALETTE[Math.floor(Math.random()*PALETTE.length)], dir, gone:false });
       }
       return {snakes:list, occ:o};
     }
@@ -970,7 +994,7 @@
     }
     function draw(){
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      ctx.fillStyle="#15151f"; roundRectPath(ctx,0,0,canvas.width,canvas.height,18); ctx.fill();
+      ctx.fillStyle=BG||"#15151f"; roundRectPath(ctx,0,0,canvas.width,canvas.height,18); ctx.fill();
       if(!snakes) return;
       const showHint = hintUntil && Date.now()<hintUntil;
       for(const s of snakes){ if(s.gone) continue; drawSnake(s, showHint && canExit(s)); }
@@ -997,7 +1021,8 @@
         if(remaining()===0){
           score+=200; stat(); Store.save("draw",score);
           praise($("dPraise"),3); beep(3);
-          setTimeout(()=>{ if($("draw").classList.contains("active")&&running){ const b=genBoard(); snakes=b.snakes; occ=b.occ; draw(); } },700);
+          level++; Store.setLevel("draw",level);
+          setTimeout(()=>{ if($("draw").classList.contains("active")&&running){ applyLevel(); newLevel(); resize(); flashText($("dPraise"),"第 "+level+" 關"); } },700);
         }
         draw();
       } else {
@@ -1012,9 +1037,16 @@
     }
     canvas.addEventListener("pointerdown",onDown);
 
+    function applyLevel(){
+      COLS=ROWS=5+((level-1)%4);          // 每關輪流 5×5 → 8×8
+      const th=THEMES[(level-1)%THEMES.length];
+      PALETTE=th.cols; BG=th.bg;
+      $("dHint").textContent="第 "+level+" 關 ‧ 點一條蛇讓它滑出去";
+    }
     function newLevel(){ const b=genBoard(); snakes=b.snakes; occ=b.occ; }
     function start(){
       score=0; over=false; running=true; flash=null; hintUntil=0;
+      level=Store.level("draw"); applyLevel();
       newLevel(); stat(); hideOverlay(); resize(); ensureAudio();
     }
     $("dStart").addEventListener("click",start);
@@ -1026,8 +1058,9 @@
       onShow(){ $("dBest").textContent=Store.best("draw");
         score=0; running=false; over=false; flash=null; hintUntil=0;
         snakes=null; occ=null;
+        level=Store.level("draw"); applyLevel();
         resize();
-        overlay("箭頭滑滑","點一條蛇<br>它會往箭頭方向滑出去","前面整條路空著才滑得走，把整盤清光 💛","開始玩"); },
+        overlay("箭頭滑滑","點一條蛇<br>它會往箭頭方向滑出去","第 "+level+" 關開始，把整盤清光 💛","開始玩"); },
       resize,
       saveBest(){ Store.save("draw",score); }
     };
