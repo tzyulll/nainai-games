@@ -38,6 +38,7 @@
   .modecard:active { transform:scale(.97); }
   .modecard.puzzle  { background:linear-gradient(135deg,#f978b6,#c86be0); box-shadow:0 8px 0 #9c4a9e; }
   .modecard.match   { background:linear-gradient(135deg,#ff9a5b,#ffcf4d); box-shadow:0 8px 0 #d98a2b; }
+  .modecard.draw    { background:linear-gradient(135deg,#4ec3e0,#5fd07a); box-shadow:0 8px 0 #2f8a6d; }
   .modecard.falling { background:linear-gradient(135deg,#5b8def,#4ec3e0); box-shadow:0 8px 0 #3a5fa5; }
   .modecard .mtitle { font-size:38px; font-weight:800; }
   .modecard .mdesc  { font-size:22px; opacity:.92; }
@@ -135,6 +136,11 @@
       <span class="mdesc">點兩個一樣的水果，連得起來就消除。消完自動換新的。</span>
       <span class="mbest">👑 最高分 <b id="bestMatch">0</b></span>
     </button>
+    <button class="modecard draw" id="goDraw">
+      <span class="mtitle">一筆畫</span>
+      <span class="mdesc">從綠點用手指拖一條線，走過每一格、把整個格子填滿。</span>
+      <span class="mbest">👑 最高分 <b id="bestDraw">0</b></span>
+    </button>
     <button class="modecard falling" id="goFalling">
       <span class="mtitle">俄羅斯方塊</span>
       <span class="mdesc">方塊慢慢落下，排滿一排就消除。</span>
@@ -220,6 +226,30 @@
     </div>
   </section>
 
+  <!-- ===== 一筆畫 ===== -->
+  <section id="draw" class="screen">
+    <div class="topbar">
+      <button class="backbtn" data-home="1">‹</button>
+      <div class="stat"><div class="label">分數</div><div class="value score" id="dScore">0</div></div>
+      <div class="stat"><div class="label">最高分</div><div class="value best" id="dBest">0</div></div>
+    </div>
+    <div class="board-wrap">
+      <canvas id="dCanvas" class="framed"></canvas>
+      <div class="praise" id="dPraise"></div>
+      <div class="overlay" id="dOverlay">
+        <div class="big" id="dTitle">一筆畫</div>
+        <div class="msg" id="dMsg">從綠點開始<br>用手指拖一條線</div>
+        <div class="sub" id="dSub">走過每一格、填滿整張格子 💛</div>
+        <button class="startbtn" id="dStart">開始玩</button>
+      </div>
+    </div>
+    <div class="puzzhint">從綠點按住，拖過每一格；走錯往回拖就好</div>
+    <div class="minirow" style="width:100%;padding:0 2px 4px;">
+      <button class="minibtn" id="dClear">🔄 重畫</button>
+      <button class="minibtn" id="dNew">↺ 換一題</button>
+    </div>
+  </section>
+
 </div>
 
 <script>
@@ -237,6 +267,8 @@
 
   function refreshHomeBest(){
     $("bestPuzzle").textContent = Store.best("puzzle");
+    $("bestMatch").textContent = Store.best("match");
+    $("bestDraw").textContent = Store.best("draw");
     $("bestFalling").textContent = Store.best("falling");
   }
 
@@ -836,19 +868,204 @@
     };
   })();
 
+  // ================= 一筆畫（填滿路徑） =================
+  const Draw = (function(){
+    const COLS=6, ROWS=6, TOTAL=COLS*ROWS;
+    const canvas=$("dCanvas"), ctx=canvas.getContext("2d");
+    let C, score, running, over, path, drawing, startCell, endCell, inPath;
+
+    const idx=(x,y)=>y*COLS+x;
+    function neighbors(x,y){
+      const r=[];
+      if(x>0)r.push([x-1,y]); if(x<COLS-1)r.push([x+1,y]);
+      if(y>0)r.push([x,y-1]); if(y<ROWS-1)r.push([x,y+1]);
+      return r;
+    }
+
+    // 用 backbite 演算法產生隨機、且保證存在的一筆畫路徑
+    function genPath(){
+      // 起始：蛇形走法（一定是合法的漢彌爾頓路徑）
+      let p=[];
+      for(let y=0;y<ROWS;y++){
+        if(y%2===0){ for(let x=0;x<COLS;x++) p.push([x,y]); }
+        else { for(let x=COLS-1;x>=0;x--) p.push([x,y]); }
+      }
+      const pos=new Array(TOTAL); // cell -> 目前在 path 的位置
+      const setPos=()=>{ p.forEach(([x,y],i)=>pos[idx(x,y)]=i); };
+      setPos();
+      const adj=(a,b)=>Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])===1;
+      const iters=TOTAL*12;
+      for(let k=0;k<iters;k++){
+        const end=Math.random()<0.5?0:1; // 0=頭 1=尾
+        const tip=end?p[p.length-1]:p[0];
+        const nb=neighbors(tip[0],tip[1]);
+        const v=nb[Math.floor(Math.random()*nb.length)];
+        const j=pos[idx(v[0],v[1])];
+        if(end){
+          if(j===p.length-2) continue;      // 已經是相鄰的
+          // 反轉 p[j+1 .. end]
+          const seg=p.slice(j+1).reverse();
+          p=p.slice(0,j+1).concat(seg);
+        } else {
+          if(j===1) continue;
+          const seg=p.slice(0,j).reverse();
+          p=seg.concat(p.slice(j));
+        }
+        setPos();
+      }
+      return p;
+    }
+
+    function newPuzzle(){
+      const full=genPath();
+      startCell={x:full[0][0],y:full[0][1]};
+      endCell={x:full[full.length-1][0],y:full[full.length-1][1]};
+      resetPath();
+    }
+    function resetPath(){
+      path=[[startCell.x,startCell.y]];
+      inPath=new Array(TOTAL).fill(false);
+      inPath[idx(startCell.x,startCell.y)]=true;
+      drawing=false;
+    }
+
+    function cellAt(px,py){
+      const x=Math.floor(px/C), y=Math.floor(py/C);
+      if(x<0||x>=COLS||y<0||y>=ROWS) return null;
+      return {x,y};
+    }
+    function head(){ return path[path.length-1]; }
+    function tryStep(c){
+      const h=head();
+      if(c.x===h[0]&&c.y===h[1]) return;
+      // 往回拖 = 退一步
+      if(path.length>=2){ const prev=path[path.length-2]; if(prev[0]===c.x&&prev[1]===c.y){ inPath[idx(h[0],h[1])]=false; path.pop(); draw(); return; } }
+      // 前進一步（必須相鄰且未走過）
+      if(Math.abs(c.x-h[0])+Math.abs(c.y-h[1])===1 && !inPath[idx(c.x,c.y)]){
+        path.push([c.x,c.y]); inPath[idx(c.x,c.y)]=true; draw();
+        if(path.length===TOTAL) win();
+      }
+    }
+
+    function win(){
+      drawing=false;
+      score+=500; stat(); Store.save("draw",score);
+      praise($("dPraise"),3); beep(3);
+      setTimeout(()=>{ if($("draw").classList.contains("active")&&running){ newPuzzle(); draw(); } },700);
+    }
+    function stat(){ $("dScore").textContent=score; }
+
+    function resize(){
+      const wrap=canvas.parentElement;
+      const cw=Math.floor((wrap.clientWidth-8)/COLS);
+      const ch=Math.floor((wrap.clientHeight-8)/ROWS);
+      C=Math.max(20,Math.min(cw,ch));
+      canvas.width=C*COLS; canvas.height=C*ROWS;
+      draw();
+    }
+    function center(cx,cy){ return [cx*C+C/2, cy*C+C/2]; }
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.strokeStyle="rgba(255,255,255,.08)"; ctx.lineWidth=1;
+      for(let x=1;x<COLS;x++){ctx.beginPath();ctx.moveTo(x*C,0);ctx.lineTo(x*C,canvas.height);ctx.stroke();}
+      for(let y=1;y<ROWS;y++){ctx.beginPath();ctx.moveTo(0,y*C);ctx.lineTo(canvas.width,y*C);ctx.stroke();}
+      // 已走過格子的底色
+      for(const [x,y] of path){
+        const pad=Math.max(1,Math.floor(C*0.08));
+        ctx.fillStyle="rgba(249,120,182,.20)";
+        roundRectPath(ctx,x*C+pad,y*C+pad,C-pad*2,C-pad*2,Math.floor(C*0.2)); ctx.fill();
+      }
+      // 路徑線
+      if(path.length>0){
+        ctx.strokeStyle="#f978b6"; ctx.lineWidth=C*0.4; ctx.lineCap="round"; ctx.lineJoin="round";
+        ctx.beginPath();
+        const s=center(path[0][0],path[0][1]); ctx.moveTo(s[0],s[1]);
+        for(let i=1;i<path.length;i++){ const c=center(path[i][0],path[i][1]); ctx.lineTo(c[0],c[1]); }
+        if(path.length===1) ctx.lineTo(s[0]+0.01,s[1]); // 單點也畫個圓
+        ctx.stroke();
+      }
+      // 終點提示（空心圈）
+      if(endCell){
+        const e=center(endCell.x,endCell.y);
+        ctx.strokeStyle="#ffd24d"; ctx.lineWidth=Math.max(3,C*0.08);
+        ctx.beginPath(); ctx.arc(e[0],e[1],C*0.26,0,Math.PI*2); ctx.stroke();
+      }
+      // 起點（綠色實心）
+      if(startCell){
+        const s=center(startCell.x,startCell.y);
+        ctx.fillStyle="#5fd07a"; ctx.beginPath(); ctx.arc(s[0],s[1],C*0.24,0,Math.PI*2); ctx.fill();
+      }
+      // 目前的筆尖（白邊）
+      if(path.length>0){
+        const h=head(); const hc=center(h[0],h[1]);
+        ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(hc[0],hc[1],C*0.13,0,Math.PI*2); ctx.fill();
+      }
+    }
+
+    function overlay(title,msg,sub,btn){
+      $("dTitle").textContent=title; $("dMsg").innerHTML=msg; $("dSub").textContent=sub;
+      $("dStart").textContent=btn; $("dOverlay").classList.remove("hidden");
+    }
+    function hideOverlay(){ $("dOverlay").classList.add("hidden"); }
+
+    function onDown(e){
+      if(!running||over) return;
+      e.preventDefault();
+      const p=evtPos(canvas,e), c=cellAt(p.x,p.y);
+      if(!c) return;
+      ensureAudio();
+      const h=head();
+      if(c.x===startCell.x&&c.y===startCell.y){ resetPath(); drawing=true; draw(); }
+      else if(c.x===h[0]&&c.y===h[1]){ drawing=true; }        // 從筆尖繼續
+      try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+    }
+    function onMove(e){
+      if(!drawing) return;
+      e.preventDefault();
+      const p=evtPos(canvas,e), c=cellAt(p.x,p.y);
+      if(c) tryStep(c);
+    }
+    function onUp(e){ drawing=false; }
+    canvas.addEventListener("pointerdown",onDown);
+    canvas.addEventListener("pointermove",onMove);
+    canvas.addEventListener("pointerup",onUp);
+    canvas.addEventListener("pointercancel",onUp);
+
+    function start(){
+      score=0; over=false; running=true; newPuzzle(); stat(); hideOverlay(); resize(); ensureAudio();
+    }
+    $("dStart").addEventListener("click",start);
+    $("dStart").addEventListener("touchstart",(e)=>{e.preventDefault();start();},{passive:false});
+    $("dClear").addEventListener("click",()=>{ if(!running||over)return; resetPath(); draw(); });
+    $("dNew").addEventListener("click",()=>{ if(!running||over)return; newPuzzle(); draw(); });
+
+    return {
+      onShow(){ $("dBest").textContent=Store.best("draw");
+        score=0; running=false; over=false;
+        startCell=null; endCell=null; path=[]; inPath=new Array(TOTAL).fill(false);
+        resize();
+        overlay("一筆畫","從綠點開始<br>用手指拖一條線","走過每一格、填滿整張格子 💛","開始玩"); },
+      resize,
+      saveBest(){ Store.save("draw",score); }
+    };
+  })();
+
   // ================= 導覽 =================
   function show(id){
-    // 水果配對是無盡模式，離開前先存最高分
+    // 無盡模式離開前先存最高分
     if($("match").classList.contains("active")) Match.saveBest();
+    if($("draw").classList.contains("active")) Draw.saveBest();
     document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
     $(id).classList.add("active");
     if(id==="home") refreshHomeBest();
     if(id==="falling") Falling.onShow();
     if(id==="puzzle") Puzzle.onShow();
     if(id==="match") Match.onShow();
+    if(id==="draw") Draw.onShow();
   }
   $("goPuzzle").addEventListener("click",()=>show("puzzle"));
   $("goMatch").addEventListener("click",()=>show("match"));
+  $("goDraw").addEventListener("click",()=>show("draw"));
   $("goFalling").addEventListener("click",()=>show("falling"));
   document.querySelectorAll("[data-home]").forEach(b=>b.addEventListener("click",()=>show("home")));
 
@@ -856,6 +1073,7 @@
     if($("falling").classList.contains("active")) Falling.resize();
     if($("puzzle").classList.contains("active")) Puzzle.resize();
     if($("match").classList.contains("active")) Match.resize();
+    if($("draw").classList.contains("active")) Draw.resize();
   }
   window.addEventListener("resize",resizeActive);
   window.addEventListener("orientationchange",()=>setTimeout(resizeActive,200));
