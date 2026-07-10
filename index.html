@@ -137,8 +137,8 @@
       <span class="mbest">👑 最高分 <b id="bestMatch">0</b></span>
     </button>
     <button class="modecard draw" id="goDraw">
-      <span class="mtitle">箭頭消除</span>
-      <span class="mdesc">點箭頭讓它往指的方向滑出去，前面沒擋住才滑得走。把整盤清空！</span>
+      <span class="mtitle">箭頭滑滑</span>
+      <span class="mdesc">點一條彎彎的蛇，它會往箭頭方向滑出去，前面整條路空著才滑得走。把整盤清光！</span>
       <span class="mbest">👑 最高分 <b id="bestDraw">0</b></span>
     </button>
     <button class="modecard falling" id="goFalling">
@@ -234,16 +234,16 @@
       <div class="stat"><div class="label">最高分</div><div class="value best" id="dBest">0</div></div>
     </div>
     <div class="board-wrap">
-      <canvas id="dCanvas" class="framed"></canvas>
+      <canvas id="dCanvas"></canvas>
       <div class="praise" id="dPraise"></div>
       <div class="overlay" id="dOverlay">
-        <div class="big" id="dTitle">箭頭消除</div>
-        <div class="msg" id="dMsg">點一個箭頭<br>讓它往指的方向滑出去</div>
-        <div class="sub" id="dSub">前面沒被擋住才滑得走，把整盤清空 💛</div>
+        <div class="big" id="dTitle">箭頭滑滑</div>
+        <div class="msg" id="dMsg">點一條蛇<br>它會往箭頭方向滑出去</div>
+        <div class="sub" id="dSub">前面整條路空著才滑得走，把整盤清光 💛</div>
         <button class="startbtn" id="dStart">開始玩</button>
       </div>
     </div>
-    <div class="puzzhint">點箭頭讓它滑出棋盤；不會滑走代表前面被擋住了</div>
+    <div class="puzzhint">點一條蛇讓它滑出去；滑不走代表前面被別條擋住了</div>
     <div class="minirow" style="width:100%;padding:0 2px 4px;">
       <button class="minibtn" id="dClear">💡 提示</button>
       <button class="minibtn" id="dNew">↺ 換一題</button>
@@ -868,116 +868,114 @@
     };
   })();
 
-  // ================= 箭頭消除 =================
+  // ================= 箭頭滑滑（Flow 霓虹蛇） =================
   const Draw = (function(){
-    const COLS=5, ROWS=5;
+    const COLS=7, ROWS=7;
     const canvas=$("dCanvas"), ctx=canvas.getContext("2d");
     const DIRS={U:[0,-1],D:[0,1],L:[-1,0],R:[1,0]};
-    let C, score, running, over, G, flash, hintUntil;
+    const NEON=["#ff3fa4","#ffd23d","#ff8a3d","#3ddc84","#ff5470","#c661ff","#35c9e0"];
+    let C, score, running, over, snakes, occ, flash, hintUntil;
 
-    function ringOf(x,y){ return Math.min(x,y,COLS-1-x,ROWS-1-y); }
-    function rayClear(x,y,dir,blocked){
-      const d=DIRS[dir]; let cx=x+d[0], cy=y+d[1];
-      while(cx>=0&&cx<COLS&&cy>=0&&cy<ROWS){ if(blocked(cx,cy)) return false; cx+=d[0]; cy+=d[1]; }
+    const key=(x,y)=>y*COLS+x;
+    const inb=(x,y)=>x>=0&&x<COLS&&y>=0&&y<ROWS;
+    function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+    function neighbors(x,y){ const r=[]; for(const d in DIRS){const v=DIRS[d]; if(inb(x+v[0],y+v[1])) r.push([x+v[0],y+v[1]]);} return r; }
+
+    // ---- 反向生成：每條蛇放下時，蛇頭正前方到邊界必須是「目前的空格」→ 保證可解 ----
+    function rayEmpty(o,hx,hy,dir){
+      const d=DIRS[dir]; let cx=hx+d[0], cy=hy+d[1];
+      while(inb(cx,cy)){ if(o[cy][cx]!=null) return false; cx+=d[0]; cy+=d[1]; }
       return true;
     }
-    // 反向生成：由內圈往外放，每個箭頭朝一個「不會被已放箭頭擋住」的方向 → 保證整盤一定清得掉
     function genBoard(){
-      const cells=[];
-      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) cells.push([x,y]);
-      cells.sort((a,b)=> (ringOf(b[0],b[1])-ringOf(a[0],a[1])) || (Math.random()-0.5));
-      const placed=Array.from({length:ROWS},()=>Array(COLS).fill(false));
-      const grid=Array.from({length:ROWS},()=>Array(COLS).fill(null));
-      const isPlaced=(x,y)=>placed[y][x];
-      for(const [x,y] of cells){
-        const valid=[];
-        for(const d in DIRS) if(rayClear(x,y,d,isPlaced)) valid.push(d);
-        const dir = valid.length ? valid[Math.floor(Math.random()*valid.length)]
-              : (Math.min(x,COLS-1-x)<Math.min(y,ROWS-1-y) ? (x<COLS-1-x?"L":"R") : (y<ROWS-1-y?"U":"D"));
-        grid[y][x]={ dir, color: COLORS[Math.floor(Math.random()*COLORS.length)] };
-        placed[y][x]=true;
+      const o=Array.from({length:ROWS},()=>Array(COLS).fill(null));
+      const list=[];
+      function emptyCells(){ const e=[]; for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) if(o[y][x]==null) e.push([x,y]); return e; }
+      let guard=0;
+      while(guard++ < COLS*ROWS*8){
+        const empt=emptyCells();
+        if(empt.length===0) break;
+        const [hx,hy]=empt[Math.floor(Math.random()*empt.length)];
+        const dirs=shuffle(["U","D","L","R"]).filter(d=>rayEmpty(o,hx,hy,d));
+        if(!dirs.length) continue;
+        const dir=dirs[0];
+        // 蛇頭正前方那條射線的格子 → 蛇身不能佔（否則擋到自己出去）
+        const forbid=new Set(); { const d=DIRS[dir]; let cx=hx+d[0],cy=hy+d[1]; while(inb(cx,cy)){forbid.add(key(cx,cy)); cx+=d[0]; cy+=d[1];} }
+        // 由蛇頭往回長出蛇身
+        const body=[[hx,hy]]; const used=new Set([key(hx,hy)]);
+        const target=2+Math.floor(Math.random()*6); // 目標長度 2~7
+        let tail=[hx,hy];
+        while(body.length<target){
+          const nb=shuffle(neighbors(tail[0],tail[1])).filter(([nx,ny])=> o[ny][nx]==null && !used.has(key(nx,ny)) && !forbid.has(key(nx,ny)));
+          if(!nb.length) break;
+          tail=nb[0]; body.unshift(tail); used.add(key(tail[0],tail[1]));
+        }
+        const idx=list.length;
+        for(const [x,y] of body) o[y][x]=idx;
+        list.push({ cells:body, color:NEON[Math.floor(Math.random()*NEON.length)], dir, gone:false });
       }
-      return grid;
+      return {snakes:list, occ:o};
     }
 
-    function occupied(x,y){ return !!(G[y]&&G[y][x]); }
-    function canExit(x,y){ const a=G[y][x]; return a && rayClear(x,y,a.dir,(cx,cy)=>occupied(cx,cy)); }
-    function remaining(){ let n=0; for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) if(G[y][x]) n++; return n; }
+    function canExit(s){
+      const h=s.cells[s.cells.length-1];
+      const d=DIRS[s.dir]; let cx=h[0]+d[0], cy=h[1]+d[1];
+      while(inb(cx,cy)){ if(occ[cy][cx]!=null) return false; cx+=d[0]; cy+=d[1]; }
+      return true;
+    }
+    function remaining(){ let n=0; for(const s of snakes) if(!s.gone) n++; return n; }
 
     function stat(){ $("dScore").textContent=score; }
     function resize(){
       const wrap=canvas.parentElement;
-      const cw=Math.floor((wrap.clientWidth-8)/COLS);
-      const ch=Math.floor((wrap.clientHeight-8)/ROWS);
-      C=Math.max(24,Math.min(cw,ch));
+      const cw=Math.floor((wrap.clientWidth-6)/COLS);
+      const ch=Math.floor((wrap.clientHeight-6)/ROWS);
+      C=Math.max(20,Math.min(cw,ch));
       canvas.width=C*COLS; canvas.height=C*ROWS;
       draw();
     }
+    const ctr=(x,y)=>[x*C+C/2, y*C+C/2];
 
-    function tint(hex,amt){ // 往白色混，amt 0~1
-      const n=parseInt(hex.slice(1),16);
-      let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
-      r=Math.round(r+(255-r)*amt); g=Math.round(g+(255-g)*amt); b=Math.round(b+(255-b)*amt);
-      return "rgb("+r+","+g+","+b+")";
+    function strokeSnake(s,w){
+      ctx.lineCap="round"; ctx.lineJoin="round"; ctx.lineWidth=w; ctx.strokeStyle=s.color;
+      ctx.beginPath();
+      const p0=ctr(s.cells[0][0],s.cells[0][1]); ctx.moveTo(p0[0],p0[1]);
+      for(let i=1;i<s.cells.length;i++){ const p=ctr(s.cells[i][0],s.cells[i][1]); ctx.lineTo(p[0],p[1]); }
+      if(s.cells.length===1) ctx.lineTo(p0[0]+0.01,p0[1]);
+      ctx.stroke();
     }
-    function shade(hex,amt){ // 往黑色混
-      const n=parseInt(hex.slice(1),16);
-      let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
-      r=Math.round(r*(1-amt)); g=Math.round(g*(1-amt)); b=Math.round(b*(1-amt));
-      return "rgb("+r+","+g+","+b+")";
-    }
-
-    function drawArrow(x,y,a,highlight){
-      const pad=Math.max(2,C*0.10);
-      const rx=x*C+pad, ry=y*C+pad, rw=C-pad*2, rh=C-pad*2, r=Math.floor(C*0.26);
-      // 立體磚（漸層 + 陰影）
-      ctx.save();
-      ctx.shadowColor="rgba(0,0,0,.4)"; ctx.shadowBlur=C*0.06; ctx.shadowOffsetY=C*0.05;
-      const g=ctx.createLinearGradient(0,ry,0,ry+rh);
-      g.addColorStop(0, tint(a.color,0.22)); g.addColorStop(1, shade(a.color,0.12));
-      ctx.fillStyle=g; roundRectPath(ctx,rx,ry,rw,rh,r); ctx.fill();
-      ctx.restore();
-      // 上緣高光
-      ctx.fillStyle="rgba(255,255,255,.30)";
-      roundRectPath(ctx,rx+rw*0.12,ry+rh*0.10,rw*0.76,rh*0.20,r*0.55); ctx.fill();
-      // 白色胖箭頭（帶淡淡陰影）
-      const cx=x*C+C/2, cy=y*C+C/2, s=C*0.27;
-      const d=DIRS[a.dir], px=-d[1], py=d[0];
-      ctx.save();
-      ctx.shadowColor="rgba(0,0,0,.18)"; ctx.shadowBlur=C*0.03; ctx.shadowOffsetY=C*0.02;
-      ctx.strokeStyle="#fff"; ctx.lineWidth=C*0.16; ctx.lineCap="round"; ctx.lineJoin="round";
-      ctx.beginPath(); ctx.moveTo(cx-d[0]*s*0.85, cy-d[1]*s*0.85); ctx.lineTo(cx+d[0]*s*0.05, cy+d[1]*s*0.05); ctx.stroke();
-      ctx.fillStyle="#fff"; ctx.beginPath();
-      ctx.moveTo(cx+d[0]*s, cy+d[1]*s);
-      ctx.lineTo(cx-d[0]*s*0.30+px*s*0.85, cy-d[1]*s*0.30+py*s*0.85);
-      ctx.lineTo(cx-d[0]*s*0.30-px*s*0.85, cy-d[1]*s*0.30-py*s*0.85);
+    function drawSnake(s,highlight){
+      // 霓虹外暈
+      ctx.save(); ctx.globalAlpha=0.22; strokeSnake(s,C*0.62); ctx.restore();
+      // 主體
+      strokeSnake(s, C*0.34);
+      // 內側高光
+      ctx.save(); ctx.globalAlpha=0.35; ctx.strokeStyle="#fff"; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.lineWidth=C*0.10;
+      ctx.beginPath();
+      const p0=ctr(s.cells[0][0],s.cells[0][1]); ctx.moveTo(p0[0],p0[1]);
+      for(let i=1;i<s.cells.length;i++){ const p=ctr(s.cells[i][0],s.cells[i][1]); ctx.lineTo(p[0],p[1]); }
+      if(s.cells.length===1) ctx.lineTo(p0[0]+0.01,p0[1]);
+      ctx.stroke(); ctx.restore();
+      // 箭頭（蛇頭）
+      const h=s.cells[s.cells.length-1]; const hc=ctr(h[0],h[1]);
+      const d=DIRS[s.dir], px=-d[1], py=d[0], s2=C*0.30;
+      ctx.fillStyle=s.color; ctx.beginPath();
+      ctx.moveTo(hc[0]+d[0]*s2, hc[1]+d[1]*s2);
+      ctx.lineTo(hc[0]-d[0]*s2*0.2+px*s2*0.85, hc[1]-d[1]*s2*0.2+py*s2*0.85);
+      ctx.lineTo(hc[0]-d[0]*s2*0.2-px*s2*0.85, hc[1]-d[1]*s2*0.2-py*s2*0.85);
       ctx.closePath(); ctx.fill();
-      ctx.restore();
       if(highlight){
-        ctx.strokeStyle="#fff44d"; ctx.lineWidth=Math.max(3,C*0.08);
-        roundRectPath(ctx,rx,ry,rw,rh,r); ctx.stroke();
+        ctx.save(); ctx.globalAlpha=0.9; strokeSnake(s,C*0.46); ctx.restore();
       }
     }
-
     function draw(){
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      // 深藍棋盤底
-      ctx.fillStyle="#232d4d"; roundRectPath(ctx,0,0,canvas.width,canvas.height,18); ctx.fill();
-      // 每格凹槽
-      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
-        const pad=Math.max(2,C*0.10);
-        ctx.fillStyle="#1a2238";
-        roundRectPath(ctx,x*C+pad,y*C+pad,C-pad*2,C-pad*2,Math.floor(C*0.26)); ctx.fill();
-      }
+      ctx.fillStyle="#15151f"; roundRectPath(ctx,0,0,canvas.width,canvas.height,18); ctx.fill();
+      if(!snakes) return;
       const showHint = hintUntil && Date.now()<hintUntil;
-      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
-        const a=G[y][x]; if(!a) continue;
-        drawArrow(x,y,a, showHint && canExit(x,y));
-      }
-      if(flash && Date.now()-flash.t<280){
-        const pad=Math.max(2,C*0.10);
-        ctx.strokeStyle="#f2694a"; ctx.lineWidth=Math.max(3,C*0.09);
-        roundRectPath(ctx,flash.x*C+pad,flash.y*C+pad,C-pad*2,C-pad*2,Math.floor(C*0.26)); ctx.stroke();
+      for(const s of snakes){ if(s.gone) continue; drawSnake(s, showHint && canExit(s)); }
+      if(flash && Date.now()-flash.t<300){
+        const s=flash.s; ctx.save(); ctx.globalAlpha=0.5; ctx.strokeStyle="#ff4444"; strokeSnake(s,C*0.5); ctx.restore();
       }
     }
 
@@ -987,46 +985,49 @@
     }
     function hideOverlay(){ $("dOverlay").classList.add("hidden"); }
 
+    function removeSnake(s){ for(const [x,y] of s.cells) occ[y][x]=null; s.gone=true; }
+
     function tap(x,y){
       if(!running||over) return;
-      if(!G[y][x]) return;
+      if(!inb(x,y)||occ[y][x]==null) return;
+      const s=snakes[occ[y][x]];
       ensureAudio();
-      if(canExit(x,y)){
-        G[y][x]=null; score+=10; stat(); beep(1);
+      if(canExit(s)){
+        removeSnake(s); score+=s.cells.length*5; stat(); beep(1);
         if(remaining()===0){
           score+=200; stat(); Store.save("draw",score);
           praise($("dPraise"),3); beep(3);
-          setTimeout(()=>{ if($("draw").classList.contains("active")&&running){ G=genBoard(); draw(); } },700);
+          setTimeout(()=>{ if($("draw").classList.contains("active")&&running){ const b=genBoard(); snakes=b.snakes; occ=b.occ; draw(); } },700);
         }
         draw();
       } else {
-        flash={x,y,t:Date.now()}; draw(); setTimeout(draw,280);
+        flash={s,t:Date.now()}; draw(); setTimeout(draw,320);
       }
     }
     function onDown(e){
       if(!running||over) return;
       e.preventDefault();
       const p=evtPos(canvas,e);
-      const x=Math.floor(p.x/C), y=Math.floor(p.y/C);
-      if(x>=0&&x<COLS&&y>=0&&y<ROWS) tap(x,y);
+      tap(Math.floor(p.x/C), Math.floor(p.y/C));
     }
     canvas.addEventListener("pointerdown",onDown);
 
+    function newLevel(){ const b=genBoard(); snakes=b.snakes; occ=b.occ; }
     function start(){
       score=0; over=false; running=true; flash=null; hintUntil=0;
-      G=genBoard(); stat(); hideOverlay(); resize(); ensureAudio();
+      newLevel(); stat(); hideOverlay(); resize(); ensureAudio();
     }
     $("dStart").addEventListener("click",start);
     $("dStart").addEventListener("touchstart",(e)=>{e.preventDefault();start();},{passive:false});
     $("dClear").addEventListener("click",()=>{ if(!running||over)return; hintUntil=Date.now()+1600; draw(); setTimeout(draw,1650); });
-    $("dNew").addEventListener("click",()=>{ if(!running||over)return; G=genBoard(); flash=null; draw(); });
+    $("dNew").addEventListener("click",()=>{ if(!running||over)return; newLevel(); flash=null; draw(); });
 
     return {
       onShow(){ $("dBest").textContent=Store.best("draw");
         score=0; running=false; over=false; flash=null; hintUntil=0;
-        G=Array.from({length:ROWS},()=>Array(COLS).fill(null));
+        snakes=null; occ=null;
         resize();
-        overlay("箭頭消除","點一個箭頭<br>讓它往指的方向滑出去","前面沒被擋住才滑得走，把整盤清空 💛","開始玩"); },
+        overlay("箭頭滑滑","點一條蛇<br>它會往箭頭方向滑出去","前面整條路空著才滑得走，把整盤清光 💛","開始玩"); },
       resize,
       saveBest(){ Store.save("draw",score); }
     };
