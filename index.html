@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="奶奶方塊">
+<meta name="theme-color" content="#2b2b3a">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
+<title>奶奶的方塊遊戲</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; }
+  html, body {
+    height:100%; overflow:hidden; background:#2b2b3a;
+    font-family:"PingFang TC","Heiti TC","Microsoft JhengHei",sans-serif;
+    color:#fff; touch-action:none; overscroll-behavior:none;
+  }
+  #app { height:100%; max-width:640px; margin:0 auto; position:relative; }
+  .screen {
+    position:absolute; inset:0; display:none;
+    flex-direction:column; align-items:center; justify-content:space-between;
+    padding:max(10px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom)) 12px;
+  }
+  .screen.active { display:flex; }
+
+  /* ---------- 首頁 ---------- */
+  #home { justify-content:center; gap:22px; }
+  #home h1 { font-size:44px; font-weight:800; letter-spacing:3px; }
+  #home .tip { font-size:24px; color:#ffd24d; margin-bottom:6px; }
+  .modecard {
+    width:100%; max-width:440px; border:none; border-radius:28px;
+    padding:26px 24px; text-align:left; color:#fff; cursor:pointer;
+    display:flex; flex-direction:column; gap:6px; font-family:inherit;
+  }
+  .modecard:active { transform:scale(.97); }
+  .modecard.puzzle  { background:linear-gradient(135deg,#f978b6,#c86be0); box-shadow:0 8px 0 #9c4a9e; }
+  .modecard.match   { background:linear-gradient(135deg,#ff9a5b,#ffcf4d); box-shadow:0 8px 0 #d98a2b; }
+  .modecard.falling { background:linear-gradient(135deg,#5b8def,#4ec3e0); box-shadow:0 8px 0 #3a5fa5; }
+  .modecard .mtitle { font-size:38px; font-weight:800; }
+  .modecard .mdesc  { font-size:22px; opacity:.92; }
+  .modecard .mbest  { font-size:22px; margin-top:4px; }
+  .modecard .mbest b { color:#fff33d; font-size:26px; }
+
+  /* ---------- 頂部列 ---------- */
+  .topbar { width:100%; display:flex; align-items:stretch; gap:10px; padding:4px 0; }
+  .backbtn {
+    flex:0 0 auto; width:64px; border:none; border-radius:18px; background:#444458;
+    color:#fff; font-size:32px; font-weight:800; cursor:pointer;
+  }
+  .backbtn:active { filter:brightness(1.3); }
+  .stat { flex:1; background:#3a3a4d; border-radius:18px; padding:6px 4px; text-align:center; }
+  .stat .label { font-size:18px; color:#c9c9e0; letter-spacing:1px; }
+  .stat .value { font-size:34px; font-weight:800; line-height:1.1; }
+  .stat .value.score { color:#ffd24d; }
+  .stat .value.lines { color:#7fe3a0; }
+  .stat .value.best  { color:#ffb3d1; }
+
+  /* ---------- 遊戲畫布 ---------- */
+  .board-wrap {
+    position:relative; flex:1; display:flex; align-items:center; justify-content:center;
+    width:100%; min-height:0; margin:8px 0;
+  }
+  canvas { background:transparent; max-height:100%; max-width:100%; touch-action:none; }
+  canvas.framed { background:#1c1c28; border-radius:16px; border:4px solid #4a4a63; box-shadow:0 10px 30px rgba(0,0,0,.4); }
+
+  .overlay {
+    position:absolute; inset:0; background:rgba(20,20,30,.92); border-radius:16px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:20px; text-align:center; padding:20px;
+  }
+  .overlay.hidden { display:none; }
+  .overlay .big { font-size:44px; font-weight:800; }
+  .overlay .msg { font-size:26px; color:#ffd24d; line-height:1.5; }
+  .overlay .sub { font-size:22px; color:#c9c9e0; line-height:1.6; }
+  .startbtn {
+    font-family:inherit; font-size:32px; font-weight:800; color:#2b2b3a;
+    background:#ffd24d; border:none; border-radius:40px; padding:18px 50px;
+    box-shadow:0 6px 0 #d9a800; cursor:pointer;
+  }
+  .startbtn:active { transform:translateY(4px); box-shadow:0 2px 0 #d9a800; }
+
+  /* ---------- 俄羅斯方塊控制鈕 ---------- */
+  .controls { width:100%; display:flex; flex-direction:column; gap:12px; }
+  .row { display:flex; gap:12px; justify-content:center; }
+  .btn {
+    font-family:inherit; flex:1; height:86px; border:none; border-radius:22px;
+    font-size:28px; font-weight:800; color:#fff; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:2px; cursor:pointer; touch-action:manipulation;
+  }
+  .btn .icon { font-size:42px; line-height:1; }
+  .btn:active { filter:brightness(1.3); transform:scale(.96); }
+  .btn-left,.btn-right { background:#5b8def; box-shadow:0 5px 0 #3f66b5; }
+  .btn-rotate { background:#b06bd6; box-shadow:0 5px 0 #7f47a0; }
+  .btn-down   { background:#4caf7d; box-shadow:0 5px 0 #357a58; }
+  .minirow { display:flex; gap:12px; justify-content:center; }
+  .minibtn {
+    font-family:inherit; flex:1; height:54px; border:none; border-radius:18px;
+    font-size:22px; font-weight:700; color:#e8e8f5; background:#444458; cursor:pointer;
+  }
+  .minibtn:active { filter:brightness(1.3); }
+
+  .puzzhint { width:100%; text-align:center; font-size:22px; color:#c9c9e0; padding:6px 0 2px; }
+
+  .praise {
+    position:absolute; top:38%; left:50%; transform:translate(-50%,-50%) scale(.6);
+    font-size:50px; font-weight:800; color:#ffcf4d; text-shadow:0 3px 10px rgba(0,0,0,.6);
+    opacity:0; pointer-events:none; white-space:nowrap;
+  }
+  .praise.show { animation:pop 1.1s ease forwards; }
+  @keyframes pop {
+    0%{opacity:0;transform:translate(-50%,-50%) scale(.5);}
+    25%{opacity:1;transform:translate(-50%,-60%) scale(1.15);}
+    70%{opacity:1;transform:translate(-50%,-70%) scale(1);}
+    100%{opacity:0;transform:translate(-50%,-90%) scale(1);}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 首頁 ===== -->
+  <section id="home" class="screen active">
+    <h1>奶奶的遊戲</h1>
+    <div class="tip">選一個想玩的 💛</div>
+    <button class="modecard puzzle" id="goPuzzle">
+      <span class="mtitle">方塊拼放</span>
+      <span class="mdesc">把積木拖進去，排滿一排就消除。慢慢玩，不會掉下來。</span>
+      <span class="mbest">👑 最高分 <b id="bestPuzzle">0</b></span>
+    </button>
+    <button class="modecard match" id="goMatch">
+      <span class="mtitle">水果配對</span>
+      <span class="mdesc">點兩個一樣的水果，連得起來就消除。消完自動換新的。</span>
+      <span class="mbest">👑 最高分 <b id="bestMatch">0</b></span>
+    </button>
+    <button class="modecard falling" id="goFalling">
+      <span class="mtitle">俄羅斯方塊</span>
+      <span class="mdesc">方塊慢慢落下，排滿一排就消除。</span>
+      <span class="mbest">👑 最高分 <b id="bestFalling">0</b></span>
+    </button>
+  </section>
+
+  <!-- ===== 俄羅斯方塊 ===== -->
+  <section id="falling" class="screen">
+    <div class="topbar">
+      <button class="backbtn" data-home="1">‹</button>
+      <div class="stat"><div class="label">分數</div><div class="value score" id="fScore">0</div></div>
+      <div class="stat"><div class="label">最高分</div><div class="value best" id="fBest">0</div></div>
+    </div>
+    <div class="board-wrap">
+      <canvas id="fCanvas" class="framed"></canvas>
+      <div class="praise" id="fPraise"></div>
+      <div class="overlay" id="fOverlay">
+        <div class="big" id="fTitle">俄羅斯方塊</div>
+        <div class="msg" id="fMsg">把方塊排滿一整排<br>就會消掉得分喔！</div>
+        <div class="sub" id="fSub">慢慢玩，不用急 💛</div>
+        <button class="startbtn" id="fStart">開始玩</button>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="row">
+        <button class="btn btn-left"   id="bLeft"><span class="icon">◀</span><span>左移</span></button>
+        <button class="btn btn-rotate" id="bRotate"><span class="icon">↻</span><span>轉向</span></button>
+        <button class="btn btn-right"  id="bRight"><span class="icon">▶</span><span>右移</span></button>
+        <button class="btn btn-down"   id="bDown"><span class="icon">▼</span><span>下降</span></button>
+      </div>
+      <div class="minirow">
+        <button class="minibtn" id="bPause">⏸ 暫停</button>
+        <button class="minibtn" id="bRestart">↺ 重來</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 方塊拼放 ===== -->
+  <section id="puzzle" class="screen">
+    <div class="topbar">
+      <button class="backbtn" data-home="1">‹</button>
+      <div class="stat"><div class="label">分數</div><div class="value score" id="pScore">0</div></div>
+      <div class="stat"><div class="label">最高分</div><div class="value best" id="pBest">0</div></div>
+    </div>
+    <div class="board-wrap">
+      <canvas id="pCanvas"></canvas>
+      <div class="praise" id="pPraise"></div>
+      <div class="overlay" id="pOverlay">
+        <div class="big" id="pTitle">方塊拼放</div>
+        <div class="msg" id="pMsg">把下面的積木<br>用手指拖到格子上</div>
+        <div class="sub" id="pSub">排滿一整排或一整行就消除 💛</div>
+        <button class="startbtn" id="pStart">開始玩</button>
+      </div>
+    </div>
+    <div class="puzzhint">手指按住下面的積木，拖到想放的位置</div>
+    <div class="minirow" style="width:100%;padding:0 2px 4px;">
+      <button class="minibtn" id="pRestart">↺ 重新開始</button>
+    </div>
+  </section>
+
+  <!-- ===== 水果配對 ===== -->
+  <section id="match" class="screen">
+    <div class="topbar">
+      <button class="backbtn" data-home="1">‹</button>
+      <div class="stat"><div class="label">分數</div><div class="value score" id="mScore">0</div></div>
+      <div class="stat"><div class="label">最高分</div><div class="value best" id="mBest">0</div></div>
+    </div>
+    <div class="board-wrap">
+      <canvas id="mCanvas" class="framed"></canvas>
+      <div class="praise" id="mPraise"></div>
+      <div class="overlay" id="mOverlay">
+        <div class="big" id="mTitle">水果配對</div>
+        <div class="msg" id="mMsg">點兩個一樣的水果<br>連得起來就消除</div>
+        <div class="sub" id="mSub">消完會自動換一盤，慢慢玩 💛</div>
+        <button class="startbtn" id="mStart">開始玩</button>
+      </div>
+    </div>
+    <div class="puzzhint">點一個水果，再點另一個一樣的</div>
+    <div class="minirow" style="width:100%;padding:0 2px 4px;">
+      <button class="minibtn" id="mShuffle">🔀 洗牌</button>
+      <button class="minibtn" id="mRestart">↺ 重新開始</button>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- 共用 ----------
+  const COLORS = ["#4ec3e0","#f7d13d","#c06be0","#5fd07a","#f2694a","#5b8def","#f5a03c","#f978b6"];
+
+  const Store = {
+    best(m){ return parseInt(localStorage.getItem("best_"+m) || "0", 10) || 0; },
+    save(m,v){ if (v > this.best(m)) { localStorage.setItem("best_"+m, String(v)); return true; } return false; }
+  };
+
+  function refreshHomeBest(){
+    $("bestPuzzle").textContent = Store.best("puzzle");
+    $("bestFalling").textContent = Store.best("falling");
+  }
+
+  function rotate(mat){
+    const r=mat.length, c=mat[0].length;
+    const out=Array.from({length:c},()=>Array(r).fill(0));
+    for(let y=0;y<r;y++)for(let x=0;x<c;x++)out[x][r-1-y]=mat[y][x];
+    return out;
+  }
+
+  function roundRectPath(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function drawBlock(ctx,px,py,size,color,alpha){
+    const pad=Math.max(1,Math.floor(size*0.06));
+    ctx.globalAlpha = alpha==null?1:alpha;
+    ctx.fillStyle=color;
+    roundRectPath(ctx,px+pad,py+pad,size-pad*2,size-pad*2,Math.floor(size*0.22));
+    ctx.fill();
+    ctx.fillStyle="rgba(255,255,255,.28)";
+    roundRectPath(ctx,px+pad+2,py+pad+2,size-pad*2-4,(size-pad*2)*0.34,Math.floor(size*0.18));
+    ctx.fill();
+    ctx.globalAlpha=1;
+  }
+
+  // 輕柔提示音
+  let audioCtx=null;
+  function ensureAudio(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==="suspended") audioCtx.resume(); }catch(e){} }
+  function beep(n){
+    try{
+      ensureAudio();
+      const base=523.25;
+      const notes = n>=3 ? [base,base*1.25,base*1.5,base*2] : [base,base*1.25];
+      notes.forEach((f,i)=>{
+        const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+        o.type="sine"; o.frequency.value=f; g.gain.value=0.0001;
+        o.connect(g); g.connect(audioCtx.destination);
+        const t=audioCtx.currentTime+i*0.09;
+        g.gain.setValueAtTime(0.0001,t);
+        g.gain.exponentialRampToValueAtTime(0.15,t+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+        o.start(t); o.stop(t+0.24);
+      });
+    }catch(e){}
+  }
+
+  const PRAISES=["太棒了！","好厲害！","奶奶最強！","漂亮！","繼續加油！","厲害厲害～"];
+  function praise(el,n){
+    let txt=PRAISES[Math.floor(Math.random()*PRAISES.length)];
+    if(n>=3) txt="哇！好強！🎉";
+    el.textContent=txt;
+    el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  }
+
+  function evtPos(canvas,e){
+    const r=canvas.getBoundingClientRect();
+    return { x:(e.clientX-r.left)*(canvas.width/r.width), y:(e.clientY-r.top)*(canvas.height/r.height) };
+  }
+
+  // ================= 俄羅斯方塊 =================
+  const Falling = (function(){
+    const COLS=10, ROWS=18;
+    const SHAPES={ I:[[1,1,1,1]], O:[[1,1],[1,1]], T:[[0,1,0],[1,1,1]],
+      S:[[0,1,1],[1,1,0]], Z:[[1,1,0],[0,1,1]], J:[[1,0,0],[1,1,1]], L:[[0,0,1],[1,1,1]] };
+    const CMAP={ I:"#4ec3e0",O:"#f7d13d",T:"#c06be0",S:"#5fd07a",Z:"#f2694a",J:"#5b8def",L:"#f5a03c" };
+    const KEYS=Object.keys(SHAPES);
+    const canvas=$("fCanvas"), ctx=canvas.getContext("2d");
+    let CELL=30, grid, cur, curX, curY, curKey, score, over, paused, running;
+    let dropInterval, dropAcc, lastTime, rafId, bag=[];
+
+    function newGrid(){ return Array.from({length:ROWS},()=>Array(COLS).fill(null)); }
+    function collide(m,px,py){
+      for(let y=0;y<m.length;y++)for(let x=0;x<m[y].length;x++){
+        if(!m[y][x])continue;
+        const nx=px+x, ny=py+y;
+        if(nx<0||nx>=COLS||ny>=ROWS)return true;
+        if(ny>=0&&grid[ny][nx])return true;
+      }
+      return false;
+    }
+    function nextKey(){
+      if(!bag.length){ bag=KEYS.slice(); for(let i=bag.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[bag[i],bag[j]]=[bag[j],bag[i]];} }
+      return bag.pop();
+    }
+    function spawn(){
+      curKey=nextKey(); cur=SHAPES[curKey].map(r=>r.slice());
+      curX=Math.floor((COLS-cur[0].length)/2); curY=-cur.length+1;
+      if(collide(cur,curX,curY)&&collide(cur,curX,curY+1)) gameOver();
+    }
+    function lockPiece(){
+      for(let y=0;y<cur.length;y++)for(let x=0;x<cur[y].length;x++){
+        if(cur[y][x]){ const ny=curY+y,nx=curX+x; if(ny<0){gameOver();return;} grid[ny][nx]=curKey; }
+      }
+      clearLines(); spawn();
+    }
+    function clearLines(){
+      let cleared=0;
+      for(let y=ROWS-1;y>=0;y--){
+        if(grid[y].every(c=>c)){ grid.splice(y,1); grid.unshift(Array(COLS).fill(null)); cleared++; y++; }
+      }
+      if(cleared>0){
+        score += [0,100,300,600,1000][cleared]||1000;
+        stat();
+        praise($("fPraise"),cleared); beep(cleared);
+        dropInterval=Math.max(420,900-Math.floor(score/1000)*60);
+      }
+    }
+    function stat(){ $("fScore").textContent=score; }
+
+    function resize(){
+      const wrap=canvas.parentElement;
+      const cw=Math.floor((wrap.clientWidth-8)/COLS);
+      const ch=Math.floor((wrap.clientHeight-8)/ROWS);
+      CELL=Math.max(14,Math.min(cw,ch));
+      canvas.width=CELL*COLS; canvas.height=CELL*ROWS;
+      draw();
+    }
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.strokeStyle="rgba(255,255,255,.05)"; ctx.lineWidth=1;
+      for(let x=1;x<COLS;x++){ctx.beginPath();ctx.moveTo(x*CELL,0);ctx.lineTo(x*CELL,canvas.height);ctx.stroke();}
+      for(let y=1;y<ROWS;y++){ctx.beginPath();ctx.moveTo(0,y*CELL);ctx.lineTo(canvas.width,y*CELL);ctx.stroke();}
+      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) if(grid[y][x]) drawBlock(ctx,x*CELL,y*CELL,CELL,CMAP[grid[y][x]]);
+      if(!cur)return;
+      let gy=curY; while(!collide(cur,curX,gy+1)) gy++;
+      for(let y=0;y<cur.length;y++)for(let x=0;x<cur[y].length;x++)
+        if(cur[y][x]&&gy+y>=0) drawBlock(ctx,(curX+x)*CELL,(gy+y)*CELL,CELL,"#ffffff",0.13);
+      for(let y=0;y<cur.length;y++)for(let x=0;x<cur[y].length;x++)
+        if(cur[y][x]&&curY+y>=0) drawBlock(ctx,(curX+x)*CELL,(curY+y)*CELL,CELL,CMAP[curKey]);
+    }
+
+    function move(dx){ if(!running||paused||over)return; if(!collide(cur,curX+dx,curY)){curX+=dx;draw();} }
+    function doRotate(){ if(!running||paused||over)return; const r=rotate(cur); for(const off of [0,-1,1,-2,2]){ if(!collide(r,curX+off,curY)){cur=r;curX+=off;draw();return;} } }
+    function softDrop(){ if(!running||paused||over)return; if(!collide(cur,curX,curY+1)){curY++;score++;stat();}else{lockPiece();} dropAcc=0; draw(); }
+
+    function loop(t){
+      rafId=requestAnimationFrame(loop);
+      if(!running||paused||over){lastTime=t;return;}
+      if(!lastTime)lastTime=t;
+      dropAcc+=t-lastTime; lastTime=t;
+      if(dropAcc>=dropInterval){ dropAcc=0; if(!collide(cur,curX,curY+1))curY++; else lockPiece(); draw(); }
+    }
+
+    function overlay(title,msg,sub,btn){
+      $("fTitle").textContent=title; $("fMsg").innerHTML=msg; $("fSub").textContent=sub;
+      $("fStart").textContent=btn; $("fOverlay").classList.remove("hidden");
+    }
+    function hideOverlay(){ $("fOverlay").classList.add("hidden"); }
+
+    function start(){
+      grid=newGrid(); bag=[]; score=0; over=false; paused=false; running=true;
+      dropInterval=900; dropAcc=0; lastTime=0; stat(); spawn(); hideOverlay(); resize();
+      if(!rafId) rafId=requestAnimationFrame(loop);
+      ensureAudio();
+    }
+    function gameOver(){
+      over=true; running=false;
+      const rec=Store.save("falling",score);
+      overlay("這局結束囉","得分 "+score+" 分！"+(rec?" 破紀錄🎉":""),"奶奶好棒 👏 再玩一局嗎？","再玩一次");
+    }
+    function togglePause(){
+      if(!running||over)return; paused=!paused;
+      if(paused) overlay("暫停中","休息一下～","準備好再繼續 😊","繼續玩"); else hideOverlay();
+    }
+
+    // 按鈕（長按連續）
+    function bindHold(id,fn){
+      const el=$(id); let hT=null,rT=null;
+      const s=(e)=>{e.preventDefault();fn();hT=setTimeout(()=>{rT=setInterval(fn,110);},320);};
+      const st=()=>{clearTimeout(hT);clearInterval(rT);hT=rT=null;};
+      el.addEventListener("touchstart",s,{passive:false});
+      el.addEventListener("touchend",st); el.addEventListener("touchcancel",st);
+      el.addEventListener("mousedown",s); el.addEventListener("mouseup",st); el.addEventListener("mouseleave",st);
+    }
+    function tap(id,fn){ const el=$(id); el.addEventListener("touchstart",(e)=>{e.preventDefault();fn();},{passive:false}); el.addEventListener("click",fn); }
+
+    bindHold("bLeft",()=>move(-1)); bindHold("bRight",()=>move(1)); bindHold("bDown",()=>softDrop());
+    tap("bRotate",doRotate); tap("bPause",togglePause);
+    tap("bRestart",()=>{ if(confirm("要重新開始嗎？")) start(); });
+    tap("fStart",()=>{ if(paused&&!over){paused=false;hideOverlay();} else start(); });
+
+    // 畫面上直接觸控
+    (function(){
+      let sx=0,sy=0,movedCols=0,dropped=false,startT=0,mDown=false,isTouch=false;
+      function begin(x,y){ if(!running||paused||over)return; sx=x;sy=y;movedCols=0;dropped=false;startT=Date.now(); }
+      function moveTo(x,y){
+        if(!running||paused||over)return;
+        const target=Math.round((x-sx)/CELL);
+        while(movedCols<target){move(1);movedCols++;}
+        while(movedCols>target){move(-1);movedCols--;}
+        if(y-sy>CELL*0.9){softDrop();sy=y;dropped=true;}
+      }
+      function end(){ if(movedCols===0&&!dropped&&Date.now()-startT<400) doRotate(); }
+      canvas.addEventListener("touchstart",(e)=>{isTouch=true;e.preventDefault();const t=e.touches[0];begin(t.clientX,t.clientY);},{passive:false});
+      canvas.addEventListener("touchmove",(e)=>{e.preventDefault();const t=e.touches[0];moveTo(t.clientX,t.clientY);},{passive:false});
+      canvas.addEventListener("touchend",(e)=>{e.preventDefault();end();},{passive:false});
+      canvas.addEventListener("mousedown",(e)=>{if(isTouch)return;mDown=true;begin(e.clientX,e.clientY);});
+      canvas.addEventListener("mousemove",(e)=>{if(mDown)moveTo(e.clientX,e.clientY);});
+      canvas.addEventListener("mouseup",()=>{if(mDown){mDown=false;end();}});
+    })();
+
+    document.addEventListener("keydown",(e)=>{
+      if(!$("falling").classList.contains("active"))return;
+      if(e.key==="ArrowLeft")move(-1); else if(e.key==="ArrowRight")move(1);
+      else if(e.key==="ArrowUp")doRotate(); else if(e.key==="ArrowDown")softDrop();
+      else if(e.key===" ")togglePause();
+    });
+
+    return {
+      onShow(){ $("fBest").textContent=Store.best("falling"); grid=newGrid(); cur=null; score=0; stat();
+        running=false; over=false; paused=false; resize();
+        overlay("俄羅斯方塊","把方塊排滿一整排<br>就會消掉得分喔！","慢慢玩，不用急 💛","開始玩"); },
+      resize
+    };
+  })();
+
+  // ================= 方塊拼放 =================
+  const Puzzle = (function(){
+    const N=8, SLOTS=3;
+    const canvas=$("pCanvas"), ctx=canvas.getContext("2d");
+    const BASE=[
+      [[1]], [[1,1]], [[1,1,1]], [[1,1,1,1]], [[1,1,1,1,1]],
+      [[1,1],[1,1]], [[1,1,1],[1,1,1]], [[1,1,1],[1,1,1],[1,1,1]],
+      [[1,0],[1,1]], [[1,1,1],[1,0,0]], [[1,0],[1,0],[1,1]],
+      [[1,1,1],[0,1,0]], [[0,1,1],[1,1,0]], [[1,1,0],[0,1,1]]
+    ];
+    let C, grid, tray, score, over, running;
+    let drag=null; // {slot,piece,px,py}
+    let boardPx, trayTop, trayH, LIFT;
+
+    function newGrid(){ return Array.from({length:N},()=>Array(N).fill(null)); }
+    function count(m){ let n=0; m.forEach(r=>r.forEach(v=>{if(v)n++;})); return n; }
+
+    function randPiece(){
+      let m=BASE[Math.floor(Math.random()*BASE.length)];
+      const rot=Math.floor(Math.random()*4);
+      for(let i=0;i<rot;i++) m=rotate(m);
+      return { cells:m, color:COLORS[Math.floor(Math.random()*COLORS.length)] };
+    }
+    function refill(){ tray=[randPiece(),randPiece(),randPiece()]; }
+
+    function canPlace(p,gx,gy){
+      const m=p.cells;
+      for(let y=0;y<m.length;y++)for(let x=0;x<m[y].length;x++){
+        if(!m[y][x])continue;
+        const X=gx+x,Y=gy+y;
+        if(X<0||X>=N||Y<0||Y>=N)return false;
+        if(grid[Y][X])return false;
+      }
+      return true;
+    }
+    function fitsAnywhere(p){
+      for(let gy=0;gy<N;gy++)for(let gx=0;gx<N;gx++) if(canPlace(p,gx,gy)) return true;
+      return false;
+    }
+
+    function place(p,gx,gy){
+      const m=p.cells;
+      for(let y=0;y<m.length;y++)for(let x=0;x<m[y].length;x++)
+        if(m[y][x]) grid[gy+y][gx+x]=p.color;
+      score += count(m);
+      clearLines();
+      stat();
+    }
+    function clearLines(){
+      const rows=[], cols=[];
+      for(let y=0;y<N;y++) if(grid[y].every(c=>c)) rows.push(y);
+      for(let x=0;x<N;x++){ let full=true; for(let y=0;y<N;y++) if(!grid[y][x]){full=false;break;} if(full)cols.push(x); }
+      const total=rows.length+cols.length;
+      if(total>0){
+        rows.forEach(y=>{ for(let x=0;x<N;x++)grid[y][x]=null; });
+        cols.forEach(x=>{ for(let y=0;y<N;y++)grid[y][x]=null; });
+        score += total*100*total; // 一次消越多、加越多
+        praise($("pPraise"),total); beep(total);
+      }
+    }
+    function stat(){ $("pScore").textContent=score; }
+
+    function afterMove(){
+      if(tray.every(t=>!t)) refill();
+      // 檢查是否還放得下
+      const alive=tray.some(t=>t&&fitsAnywhere(t));
+      if(!alive) gameOver();
+    }
+
+    function resize(){
+      const wrap=canvas.parentElement;
+      const availW=wrap.clientWidth, availH=wrap.clientHeight;
+      // 版面：棋盤(N格) + 間隔 + 托盤(高約2.6格)
+      const cByW=Math.floor(availW/N);
+      const cByH=Math.floor(availH/(N+0.5+2.6));
+      C=Math.max(16,Math.min(cByW,cByH));
+      boardPx=C*N;
+      const gap=C*0.5;
+      trayH=C*2.6;
+      trayTop=boardPx+gap;
+      LIFT=C*2.2;
+      canvas.width=boardPx;
+      canvas.height=boardPx+gap+trayH;
+      draw();
+    }
+
+    function trayLayout(i){
+      const slotW=boardPx/SLOTS;
+      return { x:i*slotW, y:trayTop, w:slotW, h:trayH };
+    }
+
+    function drawPieceScaled(p,cx,cy,cell,alpha){
+      const m=p.cells, rows=m.length, cols=m[0].length;
+      const ox=cx-cols*cell/2, oy=cy-rows*cell/2;
+      for(let y=0;y<rows;y++)for(let x=0;x<cols;x++)
+        if(m[y][x]) drawBlock(ctx,ox+x*cell,oy+y*cell,cell,p.color,alpha);
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      // 棋盤底
+      ctx.fillStyle="#1c1c28"; roundRectPath(ctx,0,0,boardPx,boardPx,16); ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,.06)"; ctx.lineWidth=1;
+      for(let i=1;i<N;i++){
+        ctx.beginPath();ctx.moveTo(i*C,0);ctx.lineTo(i*C,boardPx);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(0,i*C);ctx.lineTo(boardPx,i*C);ctx.stroke();
+      }
+      // 已放方塊
+      for(let y=0;y<N;y++)for(let x=0;x<N;x++) if(grid[y][x]) drawBlock(ctx,x*C,y*C,C,grid[y][x]);
+
+      // 落點預覽
+      if(drag){
+        const p=drag.piece, cols=p.cells[0].length, rows=p.cells.length;
+        const sx=drag.px-cols*C/2, sy=drag.py-rows*C/2-LIFT;
+        const gx=Math.round(sx/C), gy=Math.round(sy/C);
+        if(canPlace(p,gx,gy)){
+          for(let y=0;y<rows;y++)for(let x=0;x<cols;x++)
+            if(p.cells[y][x]) drawBlock(ctx,(gx+x)*C,(gy+y)*C,C,"#ffffff",0.25);
+        }
+      }
+
+      // 托盤
+      for(let i=0;i<SLOTS;i++){
+        const p=tray[i]; if(!p) continue;
+        if(drag&&drag.slot===i) continue; // 拖曳中的不畫在托盤
+        const L=trayLayout(i);
+        const maxDim=Math.max(p.cells.length,p.cells[0].length);
+        const cell=Math.min(L.w*0.8,L.h*0.9)/maxDim;
+        drawPieceScaled(p,L.x+L.w/2,L.y+L.h/2,cell,1);
+      }
+
+      // 拖曳中的積木（浮在手指上方）
+      if(drag){
+        const p=drag.piece, cols=p.cells[0].length, rows=p.cells.length;
+        drawPieceScaled(p,drag.px,drag.py-LIFT,C,0.95);
+      }
+    }
+
+    function slotAt(x,y){
+      if(y<trayTop||y>trayTop+trayH) return -1;
+      const i=Math.floor(x/(boardPx/SLOTS));
+      return (i>=0&&i<SLOTS&&tray[i])?i:-1;
+    }
+
+    function onDown(e){
+      if(!running||over) return;
+      e.preventDefault();
+      const pos=evtPos(canvas,e);
+      const i=slotAt(pos.x,pos.y);
+      if(i<0) return;
+      ensureAudio();
+      drag={ slot:i, piece:tray[i], px:pos.x, py:pos.y };
+      draw();
+    }
+    function onMove(e){
+      if(!drag) return;
+      e.preventDefault();
+      const pos=evtPos(canvas,e);
+      drag.px=pos.x; drag.py=pos.y;
+      draw();
+    }
+    function onUp(e){
+      if(!drag) return;
+      e.preventDefault();
+      const p=drag.piece, cols=p.cells[0].length, rows=p.cells.length;
+      const sx=drag.px-cols*C/2, sy=drag.py-rows*C/2-LIFT;
+      const gx=Math.round(sx/C), gy=Math.round(sy/C);
+      const slot=drag.slot;
+      const ok=canPlace(p,gx,gy);
+      drag=null;
+      if(ok){ tray[slot]=null; place(p,gx,gy); afterMove(); }
+      draw();
+    }
+
+    // 用 pointer 事件處理拖曳（iOS Safari 也支援，且不會和 touch 重複觸發）
+    canvas.addEventListener("pointerdown",onDown);
+    canvas.addEventListener("pointermove",onMove);
+    canvas.addEventListener("pointerup",onUp);
+    canvas.addEventListener("pointercancel",()=>{drag=null;draw();});
+
+    function overlay(title,msg,sub,btn){
+      $("pTitle").textContent=title; $("pMsg").innerHTML=msg; $("pSub").textContent=sub;
+      $("pStart").textContent=btn; $("pOverlay").classList.remove("hidden");
+    }
+    function hideOverlay(){ $("pOverlay").classList.add("hidden"); }
+
+    function start(){
+      grid=newGrid(); score=0; over=false; running=true; drag=null;
+      refill(); stat(); hideOverlay(); resize(); ensureAudio();
+    }
+    function gameOver(){
+      over=true; running=false;
+      const rec=Store.save("puzzle",score);
+      overlay("放不下囉","得分 "+score+" 分！"+(rec?" 破紀錄🎉":""),"奶奶好棒 👏 再玩一局嗎？","再玩一次");
+    }
+
+    $("pStart").addEventListener("click",start);
+    $("pStart").addEventListener("touchstart",(e)=>{e.preventDefault();start();},{passive:false});
+    $("pRestart").addEventListener("click",()=>{ if(confirm("要重新開始嗎？")) start(); });
+
+    window.addEventListener("resize",()=>{ if($("puzzle").classList.contains("active")) resize(); });
+
+    return {
+      onShow(){ $("pBest").textContent=Store.best("puzzle"); grid=newGrid(); tray=[null,null,null];
+        score=0; stat(); running=false; over=false; drag=null; resize();
+        overlay("方塊拼放","把下面的積木<br>用手指拖到格子上","排滿一整排或一整行就消除 💛","開始玩"); },
+      resize
+    };
+  })();
+
+  // ================= 水果配對（連連看） =================
+  const Match = (function(){
+    const COLS=8, ROWS=8;
+    const FRUITS=["🍎","🍊","🍋","🍇","🍉","🍓","🍑","🍌"];
+    const canvas=$("mCanvas"), ctx=canvas.getContext("2d");
+    let C, G, score, sel, running, over;
+
+    function emptyAt(x,y){
+      // 外圍留一圈空白邊界，路徑可繞到外面
+      if(x<-1||x>COLS||y<-1||y>ROWS) return false;
+      if(x>=0&&x<COLS&&y>=0&&y<ROWS&&G[y][x]) return false;
+      return true;
+    }
+    function straight(a,b){
+      if(a.x===b.x){
+        const lo=Math.min(a.y,b.y),hi=Math.max(a.y,b.y);
+        for(let y=lo+1;y<hi;y++) if(!emptyAt(a.x,y)) return false;
+        return true;
+      }
+      if(a.y===b.y){
+        const lo=Math.min(a.x,b.x),hi=Math.max(a.x,b.x);
+        for(let x=lo+1;x<hi;x++) if(!emptyAt(x,a.y)) return false;
+        return true;
+      }
+      return false;
+    }
+    function connect1(a,b){
+      if(straight(a,b)) return true;
+      const c1={x:a.x,y:b.y};
+      if(emptyAt(c1.x,c1.y)&&straight(a,c1)&&straight(c1,b)) return true;
+      const c2={x:b.x,y:a.y};
+      if(emptyAt(c2.x,c2.y)&&straight(a,c2)&&straight(c2,b)) return true;
+      return false;
+    }
+    function linkable(a,b){
+      if(connect1(a,b)) return true;
+      // 從 a 直線走到某個空格 E，再由 E 以 ≤1 轉接到 b（總共 ≤2 轉）
+      for(const d of [-1,1]){
+        let x=a.x+d;
+        while(emptyAt(x,a.y)){ if(connect1({x:x,y:a.y},b)) return true; x+=d; }
+        let y=a.y+d;
+        while(emptyAt(a.x,y)){ if(connect1({x:a.x,y:y},b)) return true; y+=d; }
+      }
+      return false;
+    }
+
+    function positions(){
+      const list=[];
+      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) if(G[y][x]) list.push({x,y,f:G[y][x]});
+      return list;
+    }
+    function anyMove(){
+      const byFruit={};
+      positions().forEach(p=>{ (byFruit[p.f]=byFruit[p.f]||[]).push(p); });
+      for(const f in byFruit){
+        const arr=byFruit[f];
+        for(let i=0;i<arr.length;i++)for(let j=i+1;j<arr.length;j++) if(linkable(arr[i],arr[j])) return true;
+      }
+      return false;
+    }
+
+    function newBoard(){
+      const total=COLS*ROWS;
+      const deck=[];
+      const types=FRUITS.length;
+      for(let i=0;i<total/2;i++){ const f=FRUITS[i%types]; deck.push(f,f); }
+      shuffle(deck);
+      G=Array.from({length:ROWS},()=>Array(COLS).fill(null));
+      let k=0;
+      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) G[y][x]=deck[k++];
+      let guard=0;
+      while(!anyMove()&&guard++<20) reshuffle();
+    }
+    function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} }
+    function reshuffle(){
+      const ps=positions();
+      const fs=ps.map(p=>p.f); shuffle(fs);
+      ps.forEach((p,i)=>{ G[p.y][p.x]=fs[i]; });
+    }
+
+    function resize(){
+      const wrap=canvas.parentElement;
+      const cw=Math.floor((wrap.clientWidth-8)/COLS);
+      const ch=Math.floor((wrap.clientHeight-8)/ROWS);
+      C=Math.max(16,Math.min(cw,ch));
+      canvas.width=C*COLS; canvas.height=C*ROWS;
+      draw();
+    }
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.strokeStyle="rgba(255,255,255,.05)"; ctx.lineWidth=1;
+      for(let x=1;x<COLS;x++){ctx.beginPath();ctx.moveTo(x*C,0);ctx.lineTo(x*C,canvas.height);ctx.stroke();}
+      for(let y=1;y<ROWS;y++){ctx.beginPath();ctx.moveTo(0,y*C);ctx.lineTo(canvas.width,y*C);ctx.stroke();}
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.font=Math.floor(C*0.62)+"px 'Apple Color Emoji','Segoe UI Emoji',sans-serif";
+      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+        if(!G[y][x])continue;
+        const isSel=sel&&sel.x===x&&sel.y===y;
+        // 磚底
+        const pad=Math.max(1,Math.floor(C*0.07));
+        ctx.fillStyle=isSel?"#ffd24d":"#3a3a4d";
+        roundRectPath(ctx,x*C+pad,y*C+pad,C-pad*2,C-pad*2,Math.floor(C*0.22));
+        ctx.fill();
+        if(isSel){ ctx.lineWidth=Math.max(3,C*0.06); ctx.strokeStyle="#fff"; ctx.stroke(); }
+        ctx.fillText(G[y][x], x*C+C/2, y*C+C/2+C*0.03);
+      }
+    }
+
+    function stat(){ $("mScore").textContent=score; }
+    function overlay(title,msg,sub,btn){
+      $("mTitle").textContent=title; $("mMsg").innerHTML=msg; $("mSub").textContent=sub;
+      $("mStart").textContent=btn; $("mOverlay").classList.remove("hidden");
+    }
+    function hideOverlay(){ $("mOverlay").classList.add("hidden"); }
+
+    let combo=0;
+    function tapCell(gx,gy){
+      if(!running||over) return;
+      if(gx<0||gx>=COLS||gy<0||gy>=ROWS||!G[gy][gx]) return;
+      ensureAudio();
+      if(!sel){ sel={x:gx,y:gy}; draw(); return; }
+      if(sel.x===gx&&sel.y===gy){ sel=null; draw(); return; } // 取消
+      const a=sel, b={x:gx,y:gy};
+      if(G[a.y][a.x]===G[b.y][b.x] && linkable(a,b)){
+        G[a.y][a.x]=null; G[b.y][b.x]=null; sel=null;
+        combo++; score+=100*combo; stat(); beep(combo>=3?3:1);
+        if(combo>=3) praise($("mPraise"),3);
+        if(positions().length===0){ // 清空 → 換新盤
+          praise($("mPraise"),3); combo=0;
+          setTimeout(()=>{ newBoard(); draw(); },350);
+        } else if(!anyMove()){
+          let g=0; while(!anyMove()&&g++<20) reshuffle();
+        }
+        draw();
+      } else {
+        sel={x:gx,y:gy}; combo=0; draw();
+      }
+    }
+
+    canvas.addEventListener("pointerdown",(e)=>{
+      if(!running||over) return;
+      e.preventDefault();
+      const p=evtPos(canvas,e);
+      tapCell(Math.floor(p.x/C),Math.floor(p.y/C));
+    });
+
+    function start(){
+      score=0; over=false; running=true; sel=null; combo=0;
+      newBoard(); stat(); hideOverlay(); resize(); ensureAudio();
+    }
+
+    $("mStart").addEventListener("click",start);
+    $("mStart").addEventListener("touchstart",(e)=>{e.preventDefault();start();},{passive:false});
+    $("mRestart").addEventListener("click",()=>{ if(confirm("要重新開始嗎？")) start(); });
+    $("mShuffle").addEventListener("click",()=>{ if(!running||over)return; sel=null; combo=0; let g=0; do{ reshuffle(); }while(!anyMove()&&g++<20); draw(); });
+
+    return {
+      onShow(){ $("mBest").textContent=Store.best("match");
+        G=Array.from({length:ROWS},()=>Array(COLS).fill(null)); score=0; sel=null; combo=0;
+        running=false; over=false; resize();
+        overlay("水果配對","點兩個一樣的水果<br>連得起來就消除","消完會自動換一盤，慢慢玩 💛","開始玩"); },
+      resize,
+      saveBest(){ Store.save("match",score); }
+    };
+  })();
+
+  // ================= 導覽 =================
+  function show(id){
+    // 水果配對是無盡模式，離開前先存最高分
+    if($("match").classList.contains("active")) Match.saveBest();
+    document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+    $(id).classList.add("active");
+    if(id==="home") refreshHomeBest();
+    if(id==="falling") Falling.onShow();
+    if(id==="puzzle") Puzzle.onShow();
+    if(id==="match") Match.onShow();
+  }
+  $("goPuzzle").addEventListener("click",()=>show("puzzle"));
+  $("goMatch").addEventListener("click",()=>show("match"));
+  $("goFalling").addEventListener("click",()=>show("falling"));
+  document.querySelectorAll("[data-home]").forEach(b=>b.addEventListener("click",()=>show("home")));
+
+  function resizeActive(){
+    if($("falling").classList.contains("active")) Falling.resize();
+    if($("puzzle").classList.contains("active")) Puzzle.resize();
+    if($("match").classList.contains("active")) Match.resize();
+  }
+  window.addEventListener("resize",resizeActive);
+  window.addEventListener("orientationchange",()=>setTimeout(resizeActive,200));
+
+  if("serviceWorker" in navigator){ window.addEventListener("load",()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); }); }
+
+  refreshHomeBest();
+})();
+</script>
+</body>
+</html>
