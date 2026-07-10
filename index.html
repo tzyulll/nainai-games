@@ -952,9 +952,7 @@
     function stat(){ $("dScore").textContent=score; }
     function resize(){
       const wrap=canvas.parentElement;
-      const cw=Math.floor((wrap.clientWidth-6)/COLS);
-      const ch=Math.floor((wrap.clientHeight-6)/ROWS);
-      C=Math.max(20,Math.min(cw,ch));
+      C=Math.max(16,Math.min(Math.floor(wrap.clientWidth/COLS), Math.floor(wrap.clientHeight/ROWS)));
       canvas.width=C*COLS; canvas.height=C*ROWS;
       draw();
     }
@@ -1038,9 +1036,15 @@
     canvas.addEventListener("pointerdown",onDown);
 
     function applyLevel(){
-      COLS=ROWS=5+((level-1)%4);          // 每關輪流 5×5 → 8×8
       const th=THEMES[(level-1)%THEMES.length];
       PALETTE=th.cols; BG=th.bg;
+      // 讓大迷宮鋪滿整個畫面；每關格子粗細略不同（有的密、有的大顆）→ 看起來都不一樣
+      const targets=[54,64,48,58,50];
+      const target=targets[(level-1)%targets.length];
+      const wrap=canvas.parentElement;
+      const availW=Math.max(240,wrap.clientWidth), availH=Math.max(240,wrap.clientHeight);
+      COLS=Math.max(7,Math.min(13,Math.round(availW/target)));
+      ROWS=Math.max(8,Math.min(16,Math.round(availH/target)));
       $("dHint").textContent="第 "+level+" 關 ‧ 點一條蛇讓它滑出去";
     }
     function newLevel(){ const b=genBoard(); snakes=b.snakes; occ=b.occ; }
